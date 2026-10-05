@@ -1,0 +1,17 @@
+C4Context
+    title SALESTORM — System Context
+
+    Person(buyer, "Buyer", "Browses sale, reserves unit, completes checkout")
+    Person(admin, "Admin", "Creates and manages flash sales")
+
+    System(salestorm, "SALESTORM Platform", "Handles high-concurrency flash sales: reservations, payments, orders, fulfilment")
+
+    System_Ext(cdn_waf, "CDN / WAF", "Cloudflare — waiting room, DDoS protection, rate limiting")
+    System_Ext(payment_gw, "Payment Gateway", "Stripe / Razorpay — charges and refunds")
+    System_Ext(notif_provider, "Notification Provider", "SendGrid / Twilio — email and SMS")
+
+    Rel(buyer, cdn_waf, "HTTPS — all buyer traffic")
+    Rel(admin, salestorm, "HTTPS — admin API")
+    Rel(cdn_waf, salestorm, "Filtered HTTPS traffic")
+    Rel(salestorm, payment_gw, "HTTPS — charge / query / refund")
+    Rel(salestorm, notif_provider, "HTTPS — send email / SMS")

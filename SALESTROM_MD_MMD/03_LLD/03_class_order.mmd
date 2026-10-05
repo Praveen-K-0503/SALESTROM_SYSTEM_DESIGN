@@ -1,0 +1,99 @@
+classDiagram
+    %% ── Interfaces ────────────────────────────────────────────────────────────
+
+    class IOrderRepository {
+        <<interface>>
+        +save(order Order) Order
+        +get(order_id UUID) Order
+        +get_by_reservation(reservation_id UUID) Order
+        +update_status(order_id UUID, status OrderStatus) void
+    }
+
+    class IOrderEventPublisher {
+        <<interface>>
+        +publish(event_type str, payload dict) void
+    }
+
+    %% ── Enumerations ──────────────────────────────────────────────────────────
+
+    class OrderStatus {
+        <<enumeration>>
+        CREATED
+        PAYMENT_PENDING
+        CONFIRMED
+        PROCESSING
+        SHIPPED
+        OUT_FOR_DELIVERY
+        DELIVERED
+        CANCELLED
+    }
+
+    %% ── Domain Model ──────────────────────────────────────────────────────────
+
+    class Order {
+        +id UUID
+        +customer_id UUID
+        +reservation_id UUID
+        +status OrderStatus
+        +subtotal Decimal
+        +discount Decimal
+        +total Decimal
+        +created_at datetime
+        +updated_at datetime
+    }
+
+    %% ── State Machine ─────────────────────────────────────────────────────────
+
+    class OrderStateMachine {
+        -ALLOWED_TRANSITIONS dict
+        +can_transition(current OrderStatus, target OrderStatus) bool
+        +transition(order Order, target OrderStatus) void
+    }
+
+    note for OrderStateMachine "ALLOWED_TRANSITIONS defines the valid edges\ne.g. CREATED -> [PAYMENT_PENDING, CANCELLED]\nPayment_PENDING -> [CONFIRMED, CANCELLED]\nThrows InvalidTransitionError if edge not in map"
+
+    %% ── Concrete Implementations ───────────────────────────────────────────────
+
+    class SqlOrderRepository {
+        -session Session
+        +save(order) Order
+        +get(order_id) Order
+        +get_by_reservation(reservation_id) Order
+        +update_status(order_id, status) void
+    }
+
+    class OutboxOrderEventPublisher {
+        -outbox_repo IOutboxRepository
+        +publish(event_type, payload) void
+    }
+
+    %% ── Services ──────────────────────────────────────────────────────────────
+
+    class OrderService {
+        -order_repo IOrderRepository
+        -state_machine OrderStateMachine
+        -event_publisher IOrderEventPublisher
+        +create(customer_id, reservation_id, items) Order
+        +confirm(order_id UUID) void
+        +advance(order_id UUID, target OrderStatus) void
+        +cancel(order_id UUID) void
+    }
+
+    class OrderEventConsumer {
+        -order_service OrderService
+        +handle_payment_succeeded(event dict) void
+        +handle_payment_failed(event dict) void
+    }
+
+    %% ── Relationships ─────────────────────────────────────────────────────────
+
+    IOrderRepository      <|..  SqlOrderRepository
+    IOrderEventPublisher  <|..  OutboxOrderEventPublisher
+    Order                 -->   OrderStatus
+
+    OrderService --> IOrderRepository
+    OrderService --> OrderStateMachine
+    OrderService --> IOrderEventPublisher
+    OrderService --> Order
+
+    OrderEventConsumer --> OrderService

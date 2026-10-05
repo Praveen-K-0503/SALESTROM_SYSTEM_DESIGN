@@ -1,0 +1,164 @@
+erDiagram
+    CATEGORY {
+        uuid id PK
+        text name
+        text slug UK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    PRODUCT {
+        uuid id PK
+        uuid category_id FK
+        text name
+        text sku UK
+        numeric base_price
+        text status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    SALE {
+        uuid id PK
+        uuid product_id FK
+        numeric sale_price
+        int total_units
+        timestamptz starts_at
+        timestamptz ends_at
+        text status
+        timestamptz created_at
+    }
+    INVENTORY {
+        uuid id PK
+        uuid product_id FK
+        uuid sale_id FK
+        int total_quantity
+        int available_quantity
+        int reserved_quantity
+        int version
+        timestamptz updated_at
+    }
+    CUSTOMER {
+        uuid id PK
+        text email UK
+        text name
+        text phone
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    INVENTORY_RESERVATION {
+        uuid id PK
+        uuid customer_id FK
+        uuid sale_id FK
+        uuid product_id FK
+        uuid inventory_id FK
+        text idempotency_key UK
+        text status
+        timestamptz expires_at
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    CART {
+        uuid id PK
+        uuid customer_id FK
+        text status
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    CART_ITEM {
+        uuid id PK
+        uuid cart_id FK
+        uuid product_id FK
+        int quantity
+        numeric unit_price
+    }
+    COUPON {
+        uuid id PK
+        text code UK
+        numeric discount_value
+        text discount_type
+        timestamptz valid_from
+        timestamptz valid_until
+        int max_uses
+        int used_count
+        timestamptz created_at
+    }
+    ORDER {
+        uuid id PK
+        uuid customer_id FK
+        uuid reservation_id FK
+        uuid coupon_id FK
+        text status
+        numeric subtotal
+        numeric discount
+        numeric total
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    ORDER_ITEM {
+        uuid id PK
+        uuid order_id FK
+        uuid product_id FK
+        int quantity
+        numeric unit_price
+    }
+    PAYMENT {
+        uuid id PK
+        uuid order_id FK
+        text idempotency_key UK
+        numeric amount
+        text status
+        text gateway_ref
+        text failure_reason
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    SHIPMENT {
+        uuid id PK
+        uuid order_id FK
+        text tracking_number
+        text carrier
+        text status
+        timestamptz shipped_at
+        timestamptz delivered_at
+    }
+    NOTIFICATION {
+        uuid id PK
+        uuid customer_id FK
+        uuid order_id FK
+        text channel
+        text event_type
+        text status
+        timestamptz sent_at
+        timestamptz created_at
+    }
+    OUTBOX_EVENT {
+        uuid id PK
+        text aggregate_type
+        text aggregate_id
+        text event_type
+        jsonb payload
+        text status
+        int retry_count
+        timestamptz created_at
+        timestamptz published_at
+    }
+
+    CATEGORY    ||--o{  PRODUCT              : "has"
+    PRODUCT     ||--o{  SALE                 : "featured in"
+    PRODUCT     ||--o{  INVENTORY            : "tracked by"
+    SALE        ||--||  INVENTORY            : "allocates"
+    SALE        ||--o{  INVENTORY_RESERVATION: "has"
+    CUSTOMER    ||--o{  INVENTORY_RESERVATION: "places"
+    INVENTORY   ||--o{  INVENTORY_RESERVATION: "gates"
+    PRODUCT     ||--o{  INVENTORY_RESERVATION: "for"
+    CUSTOMER    ||--o|  CART                 : "has"
+    CART        ||--o{  CART_ITEM            : "contains"
+    PRODUCT     ||--o{  CART_ITEM            : "in"
+    CUSTOMER    ||--o{  ORDER                : "places"
+    INVENTORY_RESERVATION ||--o| ORDER       : "converts to"
+    COUPON      ||--o{  ORDER                : "applied to"
+    ORDER       ||--o{  ORDER_ITEM           : "contains"
+    PRODUCT     ||--o{  ORDER_ITEM           : "in"
+    ORDER       ||--o|  PAYMENT              : "paid by"
+    ORDER       ||--o|  SHIPMENT             : "shipped via"
+    CUSTOMER    ||--o{  NOTIFICATION         : "receives"
+    ORDER       ||--o{  NOTIFICATION         : "triggers"

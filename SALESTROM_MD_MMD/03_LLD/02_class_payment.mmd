@@ -1,0 +1,144 @@
+classDiagram
+    %% ── Interfaces ────────────────────────────────────────────────────────────
+
+    class IPaymentGateway {
+        <<interface>>
+        +charge(idempotency_key str, amount Decimal, token str) GatewayResponse
+        +query_status(gateway_ref str) GatewayResponse
+    }
+
+    class IPaymentRepository {
+        <<interface>>
+        +save(payment Payment) Payment
+        +get_by_idempotency_key(key str) Payment
+        +find_pending_reconcile() List~Payment~
+        +update_status(id UUID, status PaymentStatus) void
+    }
+
+    class IOutboxRepository {
+        <<interface>>
+        +save(event OutboxEvent) void
+    }
+
+    %% ── Enumerations ──────────────────────────────────────────────────────────
+
+    class PaymentStatus {
+        <<enumeration>>
+        CREATED
+        PROCESSING
+        CONFIRMED
+        FAILED
+        PENDING_RECONCILE
+    }
+
+    class CircuitState {
+        <<enumeration>>
+        CLOSED
+        OPEN
+        HALF_OPEN
+    }
+
+    %% ── Domain Model ──────────────────────────────────────────────────────────
+
+    class Payment {
+        +id UUID
+        +order_id UUID
+        +idempotency_key str
+        +amount Decimal
+        +status PaymentStatus
+        +gateway_ref str
+        +failure_reason str
+        +created_at datetime
+        +updated_at datetime
+    }
+
+    class GatewayResponse {
+        +success bool
+        +gateway_ref str
+        +failure_reason str
+        +timed_out bool
+    }
+
+    %% ── Concrete Implementations ───────────────────────────────────────────────
+
+    class StripeGateway {
+        -base_url str
+        -api_key str
+        +charge(idempotency_key, amount, token) GatewayResponse
+        +query_status(gateway_ref) GatewayResponse
+    }
+
+    class RazorpayGateway {
+        -base_url str
+        -key_id str
+        +charge(idempotency_key, amount, token) GatewayResponse
+        +query_status(gateway_ref) GatewayResponse
+    }
+
+    class CircuitBreakerDecorator {
+        -wrapped IPaymentGateway
+        -state CircuitState
+        -failure_count int
+        -failure_threshold int = 5
+        -open_until datetime
+        +charge(idempotency_key, amount, token) GatewayResponse
+        +query_status(gateway_ref) GatewayResponse
+        -_on_success() void
+        -_on_failure() void
+    }
+
+    class GatewayClientFactory {
+        +create(provider str) IPaymentGateway
+    }
+
+    class SqlPaymentRepository {
+        -session Session
+        +save(payment) Payment
+        +get_by_idempotency_key(key) Payment
+        +find_pending_reconcile() List~Payment~
+        +update_status(id, status) void
+    }
+
+    class SqlOutboxRepository {
+        -session Session
+        +save(event OutboxEvent) void
+    }
+
+    %% ── Services ──────────────────────────────────────────────────────────────
+
+    class PaymentService {
+        -gateway IPaymentGateway
+        -payment_repo IPaymentRepository
+        -outbox_repo IOutboxRepository
+        +process(order_id, amount, token, idempotency_key) Payment
+        +reconcile(payment_id UUID) void
+    }
+
+    class ReconcilerJob {
+        -gateway IPaymentGateway
+        -payment_repo IPaymentRepository
+        -outbox_repo IOutboxRepository
+        -interval_minutes int = 5
+        +run() void
+    }
+
+    %% ── Relationships ─────────────────────────────────────────────────────────
+
+    IPaymentGateway       <|..  StripeGateway
+    IPaymentGateway       <|..  RazorpayGateway
+    IPaymentGateway       <|..  CircuitBreakerDecorator
+    CircuitBreakerDecorator -->  IPaymentGateway : wraps
+    CircuitBreakerDecorator -->  CircuitState
+    GatewayClientFactory  -->   IPaymentGateway : creates
+    IPaymentRepository    <|..  SqlPaymentRepository
+    IOutboxRepository     <|..  SqlOutboxRepository
+    Payment               -->   PaymentStatus
+
+    PaymentService --> IPaymentGateway
+    PaymentService --> IPaymentRepository
+    PaymentService --> IOutboxRepository
+    PaymentService --> Payment
+
+    ReconcilerJob --> IPaymentGateway
+    ReconcilerJob --> IPaymentRepository
+    ReconcilerJob --> IOutboxRepository

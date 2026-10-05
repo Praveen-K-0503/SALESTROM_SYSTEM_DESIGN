@@ -1,0 +1,57 @@
+sequenceDiagram
+    actor Buyer
+    participant CS as Checkout Service
+    participant PS as Payment Service
+    participant CB as CircuitBreaker
+    participant GW as Payment Gateway
+    participant PG as PostgreSQL
+    participant OW as Outbox Worker
+    participant SQS as SQS
+    participant RJ as Reconciler Job
+
+    Buyer->>CS: POST /checkout with reservation_id and payment_token
+    CS->>PS: POST /payments with amount, token, idempotency_key
+
+    PS->>PG: SELECT payment WHERE idempotency_key = key
+    alt Duplicate Payment Key Found
+        PG-->>PS: Existing payment row
+        PS-->>CS: 200 OK Idempotent Replay
+        CS-->>Buyer: 200 OK Order Replayed
+    else New Payment Attempt
+        PS->>CB: Execute charge with idempotency_key
+        alt Case 1: Gateway Success
+            CB->>GW: POST /charge with Idempotency-Key
+            GW-->>CB: 200 OK gateway_ref
+            CB-->>PS: GatewayResponse Success
+            PS->>PG: BEGIN TX: Insert payment CONFIRMED and outbox_event PaymentSucceeded
+            PG-->>PS: TX Committed
+            PS-->>CS: 200 OK CONFIRMED
+            CS->>PG: UPDATE inventory_reservation SET status = CONFIRMED
+            CS-->>Buyer: 200 OK Order Confirmed
+            OW->>PG: SELECT outbox_event WHERE status = PENDING
+            OW->>SQS: Publish PaymentSucceeded
+            OW->>PG: UPDATE outbox_event SET status = PUBLISHED
+        else Case 2: Gateway Declined
+            CB->>GW: POST /charge
+            GW-->>CB: 402 Card Declined
+            CB-->>PS: GatewayResponse Failed
+            PS->>PG: BEGIN TX: Insert payment FAILED and outbox_event PaymentFailed
+            PG-->>PS: TX Committed
+            PS-->>CS: 422 Payment Declined
+            CS->>PG: Restore stock: available_quantity + 1
+            CS-->>Buyer: 422 Payment Declined Stock Released
+        else Case 3: Gateway Timeout
+            CB->>GW: POST /charge times out
+            CB-->>PS: GatewayResponse Timed Out
+            PS->>PG: Insert payment PENDING_RECONCILE
+            PS-->>CS: 202 Accepted Pending Reconciliation
+            CS-->>Buyer: 202 Payment Processing
+            RJ->>PG: Poll PENDING_RECONCILE payments
+            RJ->>GW: Query gateway status
+            RJ->>PG: Reconcile status and restore stock if failed
+        else Case 4: Circuit Breaker Open
+            CB-->>PS: CircuitOpenError Fail Fast
+            PS-->>CS: 503 Gateway Unavailable Retry After 30s
+            CS-->>Buyer: 503 System Busy Try in 30 Seconds
+        end
+    end

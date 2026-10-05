@@ -1,0 +1,58 @@
+C4Component
+    title Component Diagram — Inventory, Payment, and Order Services
+
+    %% ── Inventory / Reservation Service ──────────────────────────────────────
+    Container_Boundary(inv_bound, "Inventory Service") {
+        Component(inv_api, "Inventory API", "FastAPI Router", "POST /reserve, POST /release")
+        Component(redis_gate, "Redis Gate", "Lua Script", "Atomic check-and-decrement; INCR on rollback")
+        Component(sql_truth, "SQL Truth Writer", "SQLAlchemy", "UPDATE inventory WHERE available>=1; rolls back Redis on 0 rows")
+        Component(sweeper, "Expiry Sweeper", "APScheduler (30 s)", "Finds RESERVED rows past expires_at; releases stock")
+        Component(inv_repo, "Inventory Repository", "SQLAlchemy ORM", "Abstracts all DB queries for inventory and reservation tables")
+    }
+
+    %% ── Payment Service ───────────────────────────────────────────────────────
+    Container_Boundary(pay_bound, "Payment Service") {
+        Component(pay_api, "Payment API", "FastAPI Router", "POST /payments (internal)")
+        Component(idem_check, "Idempotency Guard", "Redis + DB lookup", "Returns cached response if key already seen")
+        Component(breaker, "Circuit Breaker", "pybreaker", "CLOSED → OPEN (5 failures/10 s) → HALF-OPEN (30 s)")
+        Component(gw_client, "Gateway Client", "httpx", "Sends charge request with X-Idempotency-Key; retries with backoff")
+        Component(outbox_writer, "Outbox Writer", "SQLAlchemy", "Writes payment row + outbox_event in one transaction")
+    }
+
+    %% ── Order Service ─────────────────────────────────────────────────────────
+    Container_Boundary(ord_bound, "Order Service") {
+        Component(ord_consumer, "Event Consumer", "SQS Consumer", "Receives payment_success / payment_failed events")
+        Component(ord_statemachine, "Order State Machine", "Python", "Enforces valid transitions; rejects illegal state jumps")
+        Component(ord_repo, "Order Repository", "SQLAlchemy ORM", "CRUD for order table")
+        Component(ord_api, "Order API", "FastAPI Router", "GET /orders/{id} — read-only query endpoint")
+    }
+
+    %% ── External ──────────────────────────────────────────────────────────────
+    ContainerDb(redis_ext, "Redis Cluster", "ElastiCache")
+    ContainerDb(db_ext, "PostgreSQL", "RDS Multi-AZ")
+    Container(queue_ext, "SQS + DLQ", "Message Queue")
+    System_Ext(gw_ext, "Payment Gateway", "Stripe")
+
+    %% ── Relations ─────────────────────────────────────────────────────────────
+    Rel(inv_api, redis_gate, "decrement()")
+    Rel(redis_gate, redis_ext, "EVAL lua")
+    Rel(inv_api, sql_truth, "persist()")
+    Rel(sql_truth, db_ext, "UPDATE")
+    Rel(sql_truth, redis_gate, "rollback INCR on 0 rows")
+    Rel(sweeper, inv_repo, "find_expired()")
+    Rel(inv_repo, db_ext, "SELECT / UPDATE")
+    Rel(sweeper, redis_gate, "INCR on release")
+
+    Rel(pay_api, idem_check, "check key")
+    Rel(idem_check, redis_ext, "GET idem:{key}")
+    Rel(pay_api, breaker, "call gateway")
+    Rel(breaker, gw_client, "forward if CLOSED")
+    Rel(gw_client, gw_ext, "HTTPS POST /charge")
+    Rel(pay_api, outbox_writer, "write result")
+    Rel(outbox_writer, db_ext, "INSERT payment + outbox_event")
+
+    Rel(ord_consumer, queue_ext, "poll events")
+    Rel(ord_consumer, ord_statemachine, "handle(event)")
+    Rel(ord_statemachine, ord_repo, "update status")
+    Rel(ord_repo, db_ext, "UPDATE order")
+    Rel(ord_api, ord_repo, "get(order_id)")

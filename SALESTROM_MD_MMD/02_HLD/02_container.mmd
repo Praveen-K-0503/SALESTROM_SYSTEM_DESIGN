@@ -1,0 +1,52 @@
+C4Container
+    title SALESTORM — Container / Service Architecture
+
+    Person(buyer, "Buyer")
+
+    Container(cdn_waf, "CDN / WAF", "Cloudflare", "Waiting room, rate limit (100 req/min/IP), DDoS, TLS termination")
+    Container(lb, "Load Balancer", "AWS ALB", "Layer-7 routing; health checks; sticky sessions off")
+    Container(apigw, "API Gateway", "Kong", "JWT validation, request routing, per-user throttle")
+
+    Container(sale_svc, "Sale Service", "FastAPI", "Sale lifecycle: create, activate, close")
+    Container(inventory_svc, "Inventory Service", "FastAPI", "Redis Lua gate → SQL conditional update")
+    Container(reservation_svc, "Reservation Service", "FastAPI", "Create reservation, TTL, expiry sweeper")
+    Container(checkout_svc, "Checkout Service", "FastAPI", "Orchestrates reserve → pay → order")
+    Container(payment_svc, "Payment Service", "FastAPI", "Idempotent gateway call, retry, circuit breaker, outbox write")
+    Container(order_svc, "Order Service", "FastAPI", "Order CRUD, status transitions")
+    Container(shipment_svc, "Shipment Service", "FastAPI", "Fulfilment tracking")
+    Container(notif_svc, "Notification Service", "FastAPI", "Email/SMS dispatch via provider")
+    Container(outbox_worker, "Outbox Worker", "Python", "Polls outbox table; publishes to queue")
+
+    ContainerDb(redis, "Redis Cluster", "ElastiCache Redis 7", "Inventory counter, idempotency cache, waiting room state")
+    ContainerDb(db, "PostgreSQL", "RDS Multi-AZ", "Source of truth: inventory, reservations, orders, payments, outbox")
+    Container(queue, "Message Queue + DLQ", "Amazon SQS", "Async event delivery; DLQ captures failures")
+    System_Ext(payment_gw, "Payment Gateway", "Stripe / Razorpay")
+
+    Rel(buyer, cdn_waf, "HTTPS")
+    Rel(cdn_waf, lb, "Filtered HTTPS")
+    Rel(lb, apigw, "HTTP/2")
+
+    Rel(apigw, sale_svc, "REST [sync]")
+    Rel(apigw, inventory_svc, "REST [sync]")
+    Rel(apigw, reservation_svc, "REST [sync]")
+    Rel(apigw, checkout_svc, "REST [sync]")
+    Rel(apigw, order_svc, "REST [sync]")
+
+    Rel(checkout_svc, inventory_svc, "reserve() [sync]")
+    Rel(checkout_svc, payment_svc, "process() [sync]")
+    Rel(checkout_svc, order_svc, "create() [sync]")
+
+    Rel(inventory_svc, redis, "EVAL lua_decrement [sync]")
+    Rel(inventory_svc, db, "UPDATE WHERE available>=1 [sync]")
+
+    Rel(reservation_svc, db, "INSERT/UPDATE reservation [sync]")
+
+    Rel(payment_svc, payment_gw, "HTTPS charge [sync, idempotent]")
+    Rel(payment_svc, db, "INSERT payment + outbox_event [sync, same txn]")
+
+    Rel(outbox_worker, db, "SELECT unpublished [async poll]")
+    Rel(outbox_worker, queue, "Publish event [async]")
+
+    Rel(queue, order_svc, "payment_success event [async]")
+    Rel(queue, shipment_svc, "order_confirmed event [async]")
+    Rel(queue, notif_svc, "status_change event [async]")

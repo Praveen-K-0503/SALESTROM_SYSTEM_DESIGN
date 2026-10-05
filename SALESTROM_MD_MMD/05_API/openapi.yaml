@@ -1,0 +1,502 @@
+openapi: "3.0.3"
+
+info:
+  title: SALESTORM API
+  version: "1.0.0"
+  description: >
+    Flash sale platform — reservations, payments, orders.
+    Base URL: https://api.salestorm.io/v1
+    All write endpoints require an Idempotency-Key header.
+    All endpoints require a valid JWT in the Authorization header.
+
+servers:
+  - url: https://api.salestorm.io/v1
+
+security:
+  - bearerAuth: []
+
+# =======================================================================
+paths:
+
+  # ── Reservations ───────────────────────────────────────────────────────
+  /reservations:
+    post:
+      summary: Reserve one unit of a flash-sale product
+      operationId: createReservation
+      tags: [Inventory]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReservationRequest'
+            example:
+              sale_id: "a1b2c3d4-0000-0000-0000-000000000001"
+              product_id: "a1b2c3d4-0000-0000-0000-000000000002"
+      responses:
+        "201":
+          description: Reservation created successfully
+          headers:
+            X-Idempotent-Replayed:
+              schema: { type: boolean }
+              description: true when the response is a cached duplicate result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+        "200":
+          description: Duplicate request — returning cached reservation
+          headers:
+            X-Idempotent-Replayed:
+              schema: { type: boolean }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "409":
+          description: Sold out or buyer already holds a reservation for this sale
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                sold_out:
+                  value: { error: SOLD_OUT, message: "No units available for this sale" }
+                already_reserved:
+                  value: { error: ALREADY_RESERVED, message: "You already hold a reservation for this sale" }
+        "422":
+          description: Sale not active or outside sale window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: SALE_NOT_ACTIVE
+                message: "This sale is not currently active"
+        "429":
+          $ref: '#/components/responses/RateLimited'
+
+  # ── Payments ───────────────────────────────────────────────────────────
+  /payments:
+    post:
+      summary: Process payment for a reserved order
+      description: >
+        Internal endpoint called by Checkout Service.
+        Wraps the external payment gateway with idempotency, retry, and circuit breaker.
+      operationId: processPayment
+      tags: [Payment]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+            example:
+              order_id: "a1b2c3d4-0000-0000-0000-000000000010"
+              amount: 499.00
+              payment_token: "tok_stripe_xyz"
+      responses:
+        "200":
+          description: Payment confirmed (or duplicate request — replayed)
+          headers:
+            X-Idempotent-Replayed:
+              schema: { type: boolean }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        "202":
+          description: Payment accepted but pending reconciliation (gateway timed out)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              example:
+                payment_id: "uuid"
+                order_id: "uuid"
+                status: PENDING_RECONCILE
+                message: "Payment is being verified. You will be notified by email."
+        "400":
+          $ref: '#/components/responses/BadRequest'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "422":
+          description: Payment rejected by the gateway (card declined, insufficient funds)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: PAYMENT_FAILED
+                message: "Card declined by issuer"
+        "503":
+          description: Circuit breaker open — payment gateway unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: GATEWAY_UNAVAILABLE
+                message: "Payment gateway temporarily unavailable"
+                retry_after: 30
+
+  # ── Orders ─────────────────────────────────────────────────────────────
+  /orders/{id}:
+    get:
+      summary: Get order status and details
+      operationId: getOrder
+      tags: [Order]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Order found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Order does not belong to the authenticated customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: FORBIDDEN
+                message: "Access denied"
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+  /orders/{id}/cancel:
+    post:
+      summary: Cancel an order
+      description: >
+        Allowed only when order status is CREATED or PAYMENT_PENDING.
+        Triggers reservation release and stock restoration.
+      operationId: cancelOrder
+      tags: [Order]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          description: Order does not belong to the authenticated customer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          description: Order cannot be cancelled in its current state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: INVALID_STATE_TRANSITION
+                message: "Order in SHIPPED status cannot be cancelled"
+                current_status: SHIPPED
+                allowed_cancel_from: [CREATED, PAYMENT_PENDING, CONFIRMED]
+
+  # ── Sales ──────────────────────────────────────────────────────────────
+  /sales/{id}/status:
+    get:
+      summary: Get live sale status including available unit count
+      operationId: getSaleStatus
+      tags: [Sale]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Sale status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleStatusResponse'
+              example:
+                sale_id: "uuid"
+                status: ACTIVE
+                total_units: 100
+                available_quantity: 23
+                starts_at: "2026-10-05T10:00:00Z"
+                ends_at: "2026-10-05T11:00:00Z"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+
+# =======================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        RS256 JWT issued by Auth Service.
+        Expiry: 15 minutes. Refreshed via refresh token.
+        Claims: sub (customer_id), role (buyer | admin).
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Client-generated unique key for this logical operation.
+        Recommended format: SHA256(customer_id ‖ sale_id ‖ product_id).
+        Within 24 hours, duplicate keys return the original result
+        with X-Idempotent-Replayed: true and no side effects.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+
+  schemas:
+
+    ReservationRequest:
+      type: object
+      required: [sale_id, product_id]
+      properties:
+        sale_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+
+    ReservationResponse:
+      type: object
+      properties:
+        reservation_id:
+          type: string
+          format: uuid
+        sale_id:
+          type: string
+          format: uuid
+        product_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [RESERVED, PAYMENT_PENDING, CONFIRMED, SOLD, RELEASED]
+        expires_at:
+          type: string
+          format: date-time
+          description: Buyer must complete checkout before this time
+        created_at:
+          type: string
+          format: date-time
+
+    PaymentRequest:
+      type: object
+      required: [order_id, amount, payment_token]
+      properties:
+        order_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          description: Amount in the sale's currency (INR / USD)
+        payment_token:
+          type: string
+          description: Tokenised card reference from the gateway's front-end SDK
+
+    PaymentResponse:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          format: uuid
+        order_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CONFIRMED, FAILED, PENDING_RECONCILE]
+        gateway_ref:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CREATED, PAYMENT_PENDING, CONFIRMED, PROCESSING, SHIPPED, OUT_FOR_DELIVERY, DELIVERED, CANCELLED]
+        subtotal:
+          type: number
+        discount:
+          type: number
+        total:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        shipment:
+          $ref: '#/components/schemas/ShipmentSummary'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    OrderItem:
+      type: object
+      properties:
+        product_id:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          minimum: 1
+        unit_price:
+          type: number
+
+    ShipmentSummary:
+      type: object
+      nullable: true
+      properties:
+        tracking_number:
+          type: string
+          nullable: true
+        carrier:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, DISPATCHED, IN_TRANSIT, DELIVERED, RETURNED]
+        shipped_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SaleStatusResponse:
+      type: object
+      properties:
+        sale_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, CLOSED]
+        total_units:
+          type: integer
+        available_quantity:
+          type: integer
+          minimum: 0
+          description: Sourced from Redis counter; eventually consistent
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable explanation
+        retry_after:
+          type: integer
+          nullable: true
+          description: Seconds until retry is permitted (present on 429, 503)
+        current_status:
+          type: string
+          nullable: true
+          description: Present on 409 state-transition errors
+
+  responses:
+    BadRequest:
+      description: Invalid request body or missing required fields
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: VALIDATION_ERROR
+            message: "sale_id is required"
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: UNAUTHORIZED
+            message: "Bearer token missing or expired"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: NOT_FOUND
+            message: "Order not found"
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: RATE_LIMITED
+            message: "Too many reservation attempts. Try again in 60 seconds."
+            retry_after: 60

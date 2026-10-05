@@ -1,0 +1,23 @@
+stateDiagram-v2
+    [*] --> AVAILABLE : Inventory loaded for sale
+
+    AVAILABLE --> RESERVED : Buyer reserves<br/>(Redis gate + SQL decrement succeed)
+
+    RESERVED --> PAYMENT_PENDING : Checkout initiated<br/>(buyer submits payment token)
+    RESERVED --> RELEASED : TTL expired — expiry sweeper runs<br/>SQL + Redis incremented
+
+    PAYMENT_PENDING --> CONFIRMED : Payment gateway returns SUCCESS<br/>(idempotent; gateway_ref stored)
+    PAYMENT_PENDING --> PAYMENT_FAILED : Payment gateway returns FAILURE<br/>(card declined, invalid token, etc.)
+    PAYMENT_PENDING --> RELEASED : Timeout → reconciler resolves FAILED<br/>or buyer cancels
+
+    PAYMENT_FAILED --> RELEASED : Compensating action:<br/>SQL available_quantity +1<br/>Redis INCR
+
+    CONFIRMED --> SOLD : Order confirmed by Order Service<br/>(PaymentSucceeded event consumed)
+
+    RELEASED --> AVAILABLE : Stock returned to pool<br/>(available_quantity +1, reserved_quantity -1)
+
+    SOLD --> [*]
+
+    note right of RESERVED : expires_at = created_at + 10 min\nSweeper checks every 30 s
+    note right of PAYMENT_PENDING : Idempotency key prevents\nduplicate gateway charges
+    note right of RELEASED : Redis INCR always follows\nSQL increment (never before)

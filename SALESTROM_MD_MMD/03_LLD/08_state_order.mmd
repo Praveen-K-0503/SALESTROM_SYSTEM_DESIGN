@@ -1,0 +1,23 @@
+stateDiagram-v2
+    [*] --> CREATED : Order created by Checkout Service<br/>(reservation converted to order)
+
+    CREATED        --> PAYMENT_PENDING : Payment initiated
+    CREATED        --> CANCELLED       : Buyer cancels before payment
+
+    PAYMENT_PENDING --> CONFIRMED  : PaymentSucceeded event consumed<br/>(OrderEventConsumer → OrderStateMachine)
+    PAYMENT_PENDING --> CREATED    : PaymentFailed event — reservation released, order retryable
+    PAYMENT_PENDING --> CANCELLED  : Buyer cancels while awaiting payment result
+
+    CONFIRMED  --> PROCESSING    : Warehouse picks and packs order
+    CONFIRMED  --> CANCELLED     : Admin cancels (before dispatch)
+
+    PROCESSING --> SHIPPED       : Shipment dispatched — tracking number assigned
+    SHIPPED    --> OUT_FOR_DELIVERY : Last-mile scan by courier
+    OUT_FOR_DELIVERY --> DELIVERED  : Delivery confirmed
+
+    DELIVERED  --> [*]
+    CANCELLED  --> [*]
+
+    note right of CREATED         : OrderStateMachine.ALLOWED_TRANSITIONS\nenforces every edge shown here
+    note right of PAYMENT_PENDING : Transition to CONFIRMED driven\nby async SQS event, not sync call
+    note right of CANCELLED       : CANCELLED is a terminal state.\nNo further transitions allowed.

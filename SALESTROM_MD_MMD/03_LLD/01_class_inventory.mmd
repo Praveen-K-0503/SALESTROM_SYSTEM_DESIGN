@@ -1,0 +1,111 @@
+classDiagram
+    %% ── Interfaces ────────────────────────────────────────────────────────────
+
+    class IInventoryGate {
+        <<interface>>
+        +decrement(product_id UUID, sale_id UUID) bool
+        +increment(product_id UUID, sale_id UUID) void
+        +get_count(product_id UUID, sale_id UUID) int
+    }
+
+    class IInventoryRepository {
+        <<interface>>
+        +conditional_decrement(product_id UUID, sale_id UUID) bool
+        +conditional_increment(product_id UUID, sale_id UUID) void
+    }
+
+    class IReservationRepository {
+        <<interface>>
+        +create(r: InventoryReservation) InventoryReservation
+        +get_by_idempotency_key(key str) InventoryReservation
+        +find_expired() List~InventoryReservation~
+        +update_status(id UUID, status ReservationStatus) bool
+    }
+
+    %% ── Enumerations ──────────────────────────────────────────────────────────
+
+    class ReservationStatus {
+        <<enumeration>>
+        AVAILABLE
+        RESERVED
+        PAYMENT_PENDING
+        CONFIRMED
+        SOLD
+        PAYMENT_FAILED
+        RELEASED
+    }
+
+    %% ── Domain Model ──────────────────────────────────────────────────────────
+
+    class InventoryReservation {
+        +id UUID
+        +customer_id UUID
+        +sale_id UUID
+        +product_id UUID
+        +inventory_id UUID
+        +idempotency_key str
+        +status ReservationStatus
+        +expires_at datetime
+        +created_at datetime
+        +updated_at datetime
+    }
+
+    %% ── Concrete Implementations ───────────────────────────────────────────────
+
+    class RedisInventoryGate {
+        -redis_client Redis
+        -LUA_DECR str
+        +decrement(product_id, sale_id) bool
+        +increment(product_id, sale_id) void
+        +get_count(product_id, sale_id) int
+    }
+
+    class SqlInventoryRepository {
+        -session Session
+        +conditional_decrement(product_id, sale_id) bool
+        +conditional_increment(product_id, sale_id) void
+    }
+
+    class SqlReservationRepository {
+        -session Session
+        +create(r) InventoryReservation
+        +get_by_idempotency_key(key) InventoryReservation
+        +find_expired() List~InventoryReservation~
+        +update_status(id, status) bool
+    }
+
+    %% ── Services ──────────────────────────────────────────────────────────────
+
+    class InventoryService {
+        -gate IInventoryGate
+        -inv_repo IInventoryRepository
+        -res_repo IReservationRepository
+        +reserve(customer_id, sale_id, product_id, idempotency_key) InventoryReservation
+        +release(reservation_id UUID) void
+        -_rollback_gate(product_id, sale_id) void
+    }
+
+    class ExpirySweeper {
+        -gate IInventoryGate
+        -inv_repo IInventoryRepository
+        -res_repo IReservationRepository
+        -interval_seconds int = 30
+        +run() void
+        -_release_one(r InventoryReservation) void
+    }
+
+    %% ── Relationships ─────────────────────────────────────────────────────────
+
+    IInventoryGate        <|..   RedisInventoryGate
+    IInventoryRepository  <|..   SqlInventoryRepository
+    IReservationRepository <|..  SqlReservationRepository
+    InventoryReservation   -->   ReservationStatus
+
+    InventoryService --> IInventoryGate
+    InventoryService --> IInventoryRepository
+    InventoryService --> IReservationRepository
+    InventoryService --> InventoryReservation
+
+    ExpirySweeper --> IInventoryGate
+    ExpirySweeper --> IInventoryRepository
+    ExpirySweeper --> IReservationRepository

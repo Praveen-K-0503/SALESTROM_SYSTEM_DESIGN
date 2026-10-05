@@ -1,0 +1,43 @@
+C4Deployment
+    title SALESTORM — Deployment Architecture (AWS ap-south-1)
+
+    Deployment_Node(cloudflare, "Cloudflare (Global PoPs)", "CDN / WAF") {
+        Container(cf_edge, "Waiting Room + WAF + Rate Limiter", "Cloudflare Workers", "500k req/sec absorption; admits buyers to origin in order")
+    }
+
+    Deployment_Node(aws, "AWS ap-south-1") {
+
+        Deployment_Node(public_az, "Public Subnets (AZ-a, AZ-b)") {
+            Container(alb, "Application Load Balancer", "AWS ALB", "Layer-7 routing; cross-zone load balancing")
+        }
+
+        Deployment_Node(private_services, "Private Subnets — ECS Fargate (AZ-a, AZ-b)") {
+            Container(apigw_task, "API Gateway", "Kong on ECS", "JWT validation, routing, per-user throttle")
+            Container(core_tasks, "Core Services", "ECS Tasks (auto-scaled)", "Sale, Inventory, Reservation, Checkout, Payment, Order, Shipment, Notification")
+            Container(outbox_task, "Outbox Worker", "ECS Scheduled Task", "Polls outbox every 1 s; publishes to SQS")
+            Container(sweeper_task, "Expiry Sweeper", "ECS Scheduled Task", "Runs every 30 s; releases expired reservations")
+        }
+
+        Deployment_Node(data, "Data Layer (Multi-AZ)") {
+            ContainerDb(rds_primary, "RDS PostgreSQL Primary", "db.r6g.xlarge, AZ-a", "All writes; source of truth")
+            ContainerDb(rds_replica, "RDS PostgreSQL Read Replica", "db.r6g.large, AZ-b", "Order status reads; sale info reads")
+            ContainerDb(redis_primary, "ElastiCache Redis Primary", "cache.r6g.large, AZ-a", "Inventory counter, idempotency cache")
+            ContainerDb(redis_replica, "ElastiCache Redis Replica", "cache.r6g.large, AZ-b", "Hot standby; promotes on primary failure")
+        }
+
+        Deployment_Node(messaging, "Messaging") {
+            Container(sqs_main, "SQS Standard Queue", "Managed", "payment_success, order_confirmed, status_change events")
+            Container(sqs_dlq, "SQS Dead-Letter Queue", "Managed", "Messages failing after 3 retries; manual replay")
+        }
+    }
+
+    Rel(cf_edge, alb, "HTTPS — filtered traffic")
+    Rel(alb, apigw_task, "HTTP/2")
+    Rel(apigw_task, core_tasks, "REST (internal VPC)")
+    Rel(core_tasks, rds_primary, "TCP 5432 — writes")
+    Rel(core_tasks, rds_replica, "TCP 5432 — reads")
+    Rel(core_tasks, redis_primary, "TCP 6379 — Lua gate, cache")
+    Rel(outbox_task, rds_primary, "Poll outbox table")
+    Rel(outbox_task, sqs_main, "Publish events")
+    Rel(sqs_main, core_tasks, "Consume events (Order, Shipment, Notification)")
+    Rel(sqs_main, sqs_dlq, "On 3 consecutive failures")

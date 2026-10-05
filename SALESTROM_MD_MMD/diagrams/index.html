@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SALESTORM — Architecture Diagram Download Center</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success: #059669;
+      --badge-bg: #eff6ff;
+      --badge-text: #1d4ed8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding-bottom: 80px;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .header-container {
+      max-width: 1300px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .brand-title {
+      font-size: 24px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-title span {
+      background: linear-gradient(135deg, #2563eb, #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 700;
+      background: #e0f2fe;
+      color: #0369a1;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    .btn-zip {
+      background: linear-gradient(135deg, #059669, #047857);
+      color: #ffffff;
+      padding: 12px 22px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.2);
+      transition: all 0.2s;
+    }
+    .btn-zip:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 10px -1px rgba(5, 150, 105, 0.3);
+    }
+    .container {
+      max-width: 1300px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .filter-btn.active, .filter-btn:hover {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #ffffff;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
+      gap: 28px;
+    }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02), 0 2px 4px -2px rgba(0,0,0,0.02);
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 15px -3px rgba(0,0,0,0.05);
+    }
+    .card-header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fbfcfe;
+    }
+    .card-title-group h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .card-title-group p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      margin-top: 2px;
+    }
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: var(--badge-bg);
+      color: var(--badge-text);
+      padding: 4px 10px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .card-body {
+      padding: 20px;
+      background: #ffffff;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 280px;
+      cursor: zoom-in;
+    }
+    .card-body img {
+      max-width: 100%;
+      height: auto;
+      max-height: 380px;
+      object-fit: contain;
+      border-radius: 6px;
+    }
+    .card-footer {
+      padding: 14px 20px;
+      background: #f8fafc;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn-group {
+      display: flex;
+      gap: 8px;
+    }
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-outline {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { background: #f1f5f9; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="header-container">
+      <div>
+        <div class="brand-title">
+          <span>SALESTORM</span> Architecture Diagrams
+          <span class="brand-tag">Vector & High-Res PNG</span>
+        </div>
+        <p class="subtitle">Complete technical blueprint library for PPT presentations, defense evaluation, and design submission.</p>
+      </div>
+      <div>
+        <a href="./SALESTORM_Architecture_Diagrams.zip" download class="btn-zip">
+          📦 Download All Diagrams (ZIP - 2.67 MB)
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterCategory('all')">All 13 Diagrams</button>
+      <button class="filter-btn" onclick="filterCategory('hld')">HLD & Infrastructure</button>
+      <button class="filter-btn" onclick="filterCategory('db')">Database ER</button>
+      <button class="filter-btn" onclick="filterCategory('lld')">LLD Domain Classes</button>
+      <button class="filter-btn" onclick="filterCategory('seq')">Sequence Workflows</button>
+      <button class="filter-btn" onclick="filterCategory('state')">State Machines</button>
+    </div>
+
+    <div class="grid">
+
+      <!-- 1. System Context -->
+      <div class="card" data-cat="hld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>1. System Context Diagram</h3>
+            <p>02_HLD/01_context.mmd</p>
+          </div>
+          <span class="badge">C4 Level 1</span>
+        </div>
+        <div class="card-body" onclick="window.open('./01_system_context.svg', '_blank')">
+          <img src="./01_system_context.png" alt="System Context Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">External actors, boundaries & payment rails</span>
+          <div class="btn-group">
+            <a href="./01_system_context.png" download="SALESTORM_01_System_Context.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./01_system_context.svg" download="SALESTORM_01_System_Context.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Container Architecture -->
+      <div class="card" data-cat="hld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>2. Container & Service Architecture</h3>
+            <p>02_HLD/02_container.mmd</p>
+          </div>
+          <span class="badge">C4 Level 2</span>
+        </div>
+        <div class="card-body" onclick="window.open('./02_container_architecture.svg', '_blank')">
+          <img src="./02_container_architecture.png" alt="Container Architecture" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Cloudflare WAF, ALB, Kong, FastAPI, Redis, RDS, SQS</span>
+          <div class="btn-group">
+            <a href="./02_container_architecture.png" download="SALESTORM_02_Container_Architecture.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./02_container_architecture.svg" download="SALESTORM_02_Container_Architecture.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Component Diagram -->
+      <div class="card" data-cat="hld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>3. Critical Component Architecture</h3>
+            <p>02_HLD/03_component.mmd</p>
+          </div>
+          <span class="badge">C4 Level 3</span>
+        </div>
+        <div class="card-body" onclick="window.open('./03_component_diagram.svg', '_blank')">
+          <img src="./03_component_diagram.png" alt="Component Architecture" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Inventory Service & Payment Service component internals</span>
+          <div class="btn-group">
+            <a href="./03_component_diagram.png" download="SALESTORM_03_Component_Architecture.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./03_component_diagram.svg" download="SALESTORM_03_Component_Architecture.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Deployment Infrastructure -->
+      <div class="card" data-cat="hld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>4. Production AWS Deployment Diagram</h3>
+            <p>02_HLD/04_deployment.mmd</p>
+          </div>
+          <span class="badge">Infra</span>
+        </div>
+        <div class="card-body" onclick="window.open('./04_deployment_infrastructure.svg', '_blank')">
+          <img src="./04_deployment_infrastructure.png" alt="Deployment Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Multi-AZ ap-south-1 VPC, Fargate, ElastiCache, RDS Multi-AZ</span>
+          <div class="btn-group">
+            <a href="./04_deployment_infrastructure.png" download="SALESTORM_04_Deployment_Infrastructure.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./04_deployment_infrastructure.svg" download="SALESTORM_04_Deployment_Infrastructure.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Database ER Diagram -->
+      <div class="card" data-cat="db">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>5. Database Entity-Relationship (ER) Schema</h3>
+            <p>04_Database/er_diagram.mmd</p>
+          </div>
+          <span class="badge">Schema</span>
+        </div>
+        <div class="card-body" onclick="window.open('./05_database_er_diagram.svg', '_blank')">
+          <img src="./05_database_er_diagram.png" alt="Database ER Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">11 core entities, foreign keys, and ACID relationships</span>
+          <div class="btn-group">
+            <a href="./05_database_er_diagram.png" download="SALESTORM_05_Database_ER_Diagram.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./05_database_er_diagram.svg" download="SALESTORM_05_Database_ER_Diagram.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. Inventory Class Diagram -->
+      <div class="card" data-cat="lld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>6. Inventory Domain Class Diagram</h3>
+            <p>03_LLD/01_class_inventory.mmd</p>
+          </div>
+          <span class="badge">OOP</span>
+        </div>
+        <div class="card-body" onclick="window.open('./06_class_inventory.svg', '_blank')">
+          <img src="./06_class_inventory.png" alt="Inventory Class Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Repositories, token counters & two-phase gate classes</span>
+          <div class="btn-group">
+            <a href="./06_class_inventory.png" download="SALESTORM_06_Class_Inventory.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./06_class_inventory.svg" download="SALESTORM_06_Class_Inventory.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. Payment Class Diagram -->
+      <div class="card" data-cat="lld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>7. Payment Service & Circuit Breaker Class Diagram</h3>
+            <p>03_LLD/02_class_payment.mmd</p>
+          </div>
+          <span class="badge">SOLID & Patterns</span>
+        </div>
+        <div class="card-body" onclick="window.open('./07_class_payment.svg', '_blank')">
+          <img src="./07_class_payment.png" alt="Payment Class Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">IPaymentGateway, CircuitBreakerDecorator, Factory, Strategy</span>
+          <div class="btn-group">
+            <a href="./07_class_payment.png" download="SALESTORM_07_Class_Payment.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./07_class_payment.svg" download="SALESTORM_07_Class_Payment.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8. Order Class Diagram -->
+      <div class="card" data-cat="lld">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>8. Order Service & Saga Domain Class Diagram</h3>
+            <p>03_LLD/03_class_order.mmd</p>
+          </div>
+          <span class="badge">OOP</span>
+        </div>
+        <div class="card-body" onclick="window.open('./08_class_order.svg', '_blank')">
+          <img src="./08_class_order.png" alt="Order Class Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Order Saga, State transitions, and SQS Event Consumers</span>
+          <div class="btn-group">
+            <a href="./08_class_order.png" download="SALESTORM_08_Class_Order.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./08_class_order.svg" download="SALESTORM_08_Class_Order.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 9. Sequence: Reservation -->
+      <div class="card" data-cat="seq">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>9. Two-Phase Reservation Sequence Diagram</h3>
+            <p>03_LLD/04_seq_reservation.mmd</p>
+          </div>
+          <span class="badge">Workflow</span>
+        </div>
+        <div class="card-body" onclick="window.open('./09_sequence_reservation.svg', '_blank')">
+          <img src="./09_sequence_reservation.png" alt="Reservation Sequence Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Redis Lua fast path, SQL conditional update & rollback</span>
+          <div class="btn-group">
+            <a href="./09_sequence_reservation.png" download="SALESTORM_09_Sequence_Reservation.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./09_sequence_reservation.svg" download="SALESTORM_09_Sequence_Reservation.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 10. Sequence: Payment -->
+      <div class="card" data-cat="seq">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>10. Idempotent Payment & Resilience Sequence</h3>
+            <p>03_LLD/05_seq_payment.mmd</p>
+          </div>
+          <span class="badge">Workflow</span>
+        </div>
+        <div class="card-body" onclick="window.open('./10_sequence_payment.svg', '_blank')">
+          <img src="./10_sequence_payment.png" alt="Payment Sequence Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Success, 402 Declined, Timeout, Reconciler Job & Circuit Breaker</span>
+          <div class="btn-group">
+            <a href="./10_sequence_payment.png" download="SALESTORM_10_Sequence_Payment.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./10_sequence_payment.svg" download="SALESTORM_10_Sequence_Payment.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 11. Sequence: Order Outage Recovery -->
+      <div class="card" data-cat="seq">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>11. 30s Order Service Outage Recovery Sequence</h3>
+            <p>03_LLD/06_seq_order_recovery.mmd</p>
+          </div>
+          <span class="badge">Resilience</span>
+        </div>
+        <div class="card-body" onclick="window.open('./11_sequence_order_recovery.svg', '_blank')">
+          <img src="./11_sequence_order_recovery.png" alt="Order Recovery Sequence Diagram" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">Transactional Outbox buffer, SQS retries, deduplication & DLQ</span>
+          <div class="btn-group">
+            <a href="./11_sequence_order_recovery.png" download="SALESTORM_11_Sequence_Order_Recovery.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./11_sequence_order_recovery.svg" download="SALESTORM_11_Sequence_Order_Recovery.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 12. State: Reservation -->
+      <div class="card" data-cat="state">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>12. 10-Minute Hold Reservation State Machine</h3>
+            <p>03_LLD/07_state_reservation.mmd</p>
+          </div>
+          <span class="badge">State Machine</span>
+        </div>
+        <div class="card-body" onclick="window.open('./12_state_reservation.svg', '_blank')">
+          <img src="./12_state_reservation.png" alt="Reservation State Machine" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">AVAILABLE → RESERVED → CONFIRMED → SOLD / RELEASED</span>
+          <div class="btn-group">
+            <a href="./12_state_reservation.png" download="SALESTORM_12_State_Reservation.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./12_state_reservation.svg" download="SALESTORM_12_State_Reservation.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- 13. State: Order -->
+      <div class="card" data-cat="state">
+        <div class="card-header">
+          <div class="card-title-group">
+            <h3>13. Order Fulfillment & Delivery State Machine</h3>
+            <p>03_LLD/08_state_order.mmd</p>
+          </div>
+          <span class="badge">State Machine</span>
+        </div>
+        <div class="card-body" onclick="window.open('./13_state_order.svg', '_blank')">
+          <img src="./13_state_order.png" alt="Order State Machine" loading="lazy">
+        </div>
+        <div class="card-footer">
+          <span class="subtitle">CREATED → CONFIRMED → PROCESSING → SHIPPED → DELIVERED</span>
+          <div class="btn-group">
+            <a href="./13_state_order.png" download="SALESTORM_13_State_Order.png" class="btn btn-primary">📥 Download PNG (PPT)</a>
+            <a href="./13_state_order.svg" download="SALESTORM_13_State_Order.svg" class="btn btn-outline">📥 Vector SVG</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    function filterCategory(cat) {
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+
+      const cards = document.querySelectorAll('.card');
+      cards.forEach(card => {
+        if (cat === 'all' || card.getAttribute('data-cat') === cat) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+
+</body>
+</html>

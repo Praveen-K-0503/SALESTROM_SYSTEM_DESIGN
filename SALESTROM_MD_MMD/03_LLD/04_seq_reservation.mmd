@@ -1,0 +1,54 @@
+sequenceDiagram
+    actor Buyer
+    participant GW  as API Gateway
+    participant IS  as Inventory Service
+    participant RDB as Redis
+    participant PG  as PostgreSQL
+
+    Buyer ->> GW : POST /reservations<br/>{sale_id, product_id}<br/>Idempotency-Key: K1
+    GW    ->> IS : reserve(customer_id, sale_id, product_id, key=K1)
+
+    %% ── Idempotency check (duplicate request path) ───────────────────────────
+    IS    ->> PG : SELECT * FROM inventory_reservation<br/>WHERE idempotency_key = K1
+    alt Duplicate request — key K1 already exists
+        PG  -->> IS : existing_reservation row
+        IS  -->> GW : 200 OK {reservation}
+        GW  -->> Buyer : 200 OK X-Idempotent-Replayed: true
+    else New request — key not found
+        PG  -->> IS : (no row)
+
+        %% ── Business validation ─────────────────────────────────────────────
+        IS  ->> PG : SELECT * FROM sale WHERE id=sale_id AND status='ACTIVE'<br/>AND now() BETWEEN starts_at AND ends_at
+        alt Sale not active / outside window
+            PG  -->> IS : (no row)
+            IS  -->> GW : 422 SALE_NOT_ACTIVE
+            GW  -->> Buyer : 422 Unprocessable
+        else Sale active
+            PG  -->> IS : sale row
+
+            %% ── Redis fast gate ─────────────────────────────────────────────
+            IS  ->> RDB : EVAL lua_decrement("inv:{sale_id}:{product_id}")
+            alt Sold out — Redis counter = 0
+                RDB -->> IS : 0
+                IS  -->> GW : 409 SOLD_OUT
+                GW  -->> Buyer : 409 Sold out
+            else Stock available — Redis decremented
+                RDB -->> IS : 1
+
+                %% ── SQL source-of-truth ────────────────────────────────────
+                IS  ->> PG : UPDATE inventory<br/>SET available_quantity = available_quantity - 1,<br/>    reserved_quantity  = reserved_quantity  + 1,<br/>    version = version + 1<br/>WHERE sale_id=? AND product_id=?<br/>AND available_quantity >= 1
+                alt SQL returns 0 rows — concurrent race, stock now 0
+                    PG  -->> IS : 0 rows affected
+                    IS  ->> RDB : INCR ("inv:{sale_id}:{product_id}") ← rollback
+                    IS  -->> GW : 409 SOLD_OUT
+                    GW  -->> Buyer : 409 Sold out
+                else SQL returns 1 row — decrement confirmed
+                    PG  -->> IS : 1 row affected
+                    IS  ->> PG : INSERT inventory_reservation<br/>(status=RESERVED, expires_at=now()+10min,<br/> idempotency_key=K1)
+                    PG  -->> IS : reservation row
+                    IS  -->> GW : 201 Created {reservation_id, expires_at, status:RESERVED}
+                    GW  -->> Buyer : 201 Created
+                end
+            end
+        end
+    end
